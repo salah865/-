@@ -1,0 +1,22 @@
+[build]
+  publish = "dist/client"
+  command = "node build-netlify.js"
+
+[build.environment]
+  NODE_VERSION = "18"
+  VITE_FIREBASE_API_KEY = "AIzaSyA_75j1IeWUEiiMzy6h92ArqcKGsrUdGpw"
+  VITE_FIREBASE_PROJECT_ID = "tajer-ee602"
+  VITE_FIREBASE_APP_ID = "1:301383072900:android:161e7695aabaea5ffd56d1"
+
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/server/:splat"
+  status = 200
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+[functions]
+  directory = "netlify/functions"

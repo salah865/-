@@ -1,0 +1,999 @@
+import { 
+  collection, 
+  doc, 
+  getDocs, 
+  getDoc, 
+  addDoc, 
+  setDoc,
+  updateDoc, 
+  deleteDoc, 
+  query, 
+  where, 
+  orderBy, 
+  serverTimestamp 
+} from 'firebase/firestore';
+import { db } from './firebaseConfig.js';
+import { IStorage } from './storage.js';
+import {
+  User, InsertUser, Category, InsertCategory, Product, InsertProduct,
+  ProductWithCategory, Customer, InsertCustomer, Order, InsertOrder,
+  OrderWithCustomer, OrderWithItems, OrderItem, InsertOrderItem
+} from '../shared/schema.js';
+
+export class FirebaseService implements IStorage {
+  
+  // Helper function to generate numeric IDs
+  private generateId(): number {
+    return Math.floor(Math.random() * 1000000) + Date.now();
+  }
+
+  // Users
+  async getUsers(): Promise<User[]> {
+    const usersRef = collection(db, 'users');
+    const snapshot = await getDocs(usersRef);
+    return snapshot.docs.map(doc => ({ 
+      id: this.generateId(), 
+      ...doc.data(),
+      createdAt: doc.data().createdAt?.toDate() || new Date()
+    } as User));
+  }
+
+  async getUser(id: number): Promise<User | undefined> {
+    const usersRef = collection(db, 'users');
+    const q = query(usersRef, where('userId', '==', id));
+    const snapshot = await getDocs(q);
+    if (snapshot.empty) return undefined;
+    const doc = snapshot.docs[0];
+    return { 
+      id, 
+      ...doc.data(),
+      createdAt: doc.data().createdAt?.toDate() || new Date()
+    } as User;
+  }
+
+  async getUserByPhone(phone: string): Promise<User | undefined> {
+    const usersRef = collection(db, 'users');
+    const q = query(usersRef, where('phone', '==', phone));
+    const snapshot = await getDocs(q);
+    if (snapshot.empty) return undefined;
+    const doc = snapshot.docs[0];
+    return { 
+      id: this.generateId(), 
+      ...doc.data(),
+      createdAt: doc.data().createdAt?.toDate() || new Date()
+    } as User;
+  }
+
+  async createUser(user: InsertUser): Promise<User> {
+    const id = this.generateId();
+    const usersRef = collection(db, 'users');
+    await addDoc(usersRef, {
+      userId: id,
+      ...user,
+      createdAt: serverTimestamp()
+    });
+    return { id, ...user, createdAt: new Date() } as User;
+  }
+
+  // Categories
+  async getCategories(): Promise<Category[]> {
+    const categoriesRef = collection(db, 'categories');
+    const snapshot = await getDocs(categoriesRef);
+    return snapshot.docs.map(doc => ({ 
+      id: this.generateId(), 
+      ...doc.data(),
+      createdAt: doc.data().createdAt?.toDate() || new Date(),
+      description: doc.data().description || null
+    } as Category));
+  }
+
+  async getCategory(id: number): Promise<Category | undefined> {
+    const categoriesRef = collection(db, 'categories');
+    const q = query(categoriesRef, where('categoryId', '==', id));
+    const snapshot = await getDocs(q);
+    if (snapshot.empty) return undefined;
+    const doc = snapshot.docs[0];
+    return { 
+      id, 
+      ...doc.data(),
+      createdAt: doc.data().createdAt?.toDate() || new Date(),
+      description: doc.data().description || null
+    } as Category;
+  }
+
+  async createCategory(category: InsertCategory): Promise<Category> {
+    const id = this.generateId();
+    const categoriesRef = collection(db, 'categories');
+    await addDoc(categoriesRef, {
+      categoryId: id,
+      ...category,
+      description: category.description || null,
+      createdAt: serverTimestamp()
+    });
+    return { 
+      id, 
+      ...category, 
+      createdAt: new Date(),
+      description: category.description || null
+    } as Category;
+  }
+
+  async updateCategory(id: number, categoryData: Partial<InsertCategory>): Promise<Category | undefined> {
+    const categoriesRef = collection(db, 'categories');
+    const q = query(categoriesRef, where('categoryId', '==', id));
+    const snapshot = await getDocs(q);
+    if (snapshot.empty) return undefined;
+    
+    const docRef = snapshot.docs[0].ref;
+    await updateDoc(docRef, { ...categoryData });
+    return this.getCategory(id);
+  }
+
+  async deleteCategory(id: number): Promise<boolean> {
+    try {
+      const categoriesRef = collection(db, 'categories');
+      const q = query(categoriesRef, where('categoryId', '==', id));
+      const snapshot = await getDocs(q);
+      if (snapshot.empty) return false;
+      
+      await deleteDoc(snapshot.docs[0].ref);
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  // Products
+  async getProducts(): Promise<ProductWithCategory[]> {
+    const productsRef = collection(db, 'products');
+    const snapshot = await getDocs(productsRef);
+    const products = await Promise.all(
+      snapshot.docs.map(async (productDoc) => {
+        const data = productDoc.data();
+        const product = {
+          id: this.generateId(),
+          name: data.name,
+          price: data.price?.toString() || '0',
+          stock: data.stock || 0,
+          sku: data.sku || '',
+          categoryId: data.categoryId || null,
+          status: data.status || 'active',
+          description: data.description || null,
+          minPrice: data.minPrice?.toString() || null,
+          maxPrice: data.maxPrice?.toString() || null,
+          imageUrl: data.imageUrl || null,
+          createdAt: data.createdAt?.toDate() || new Date(),
+          updatedAt: data.updatedAt?.toDate() || null
+        } as Product;
+
+        let category = undefined;
+        if (data.categoryId) {
+          category = await this.getCategory(data.categoryId);
+        }
+
+        return { ...product, category } as ProductWithCategory;
+      })
+    );
+    return products;
+  }
+
+  async getProduct(id: number): Promise<ProductWithCategory | undefined> {
+    const productsRef = collection(db, 'products');
+    
+    // البحث بـ productId أولاً
+    let q = query(productsRef, where('productId', '==', id));
+    let snapshot = await getDocs(q);
+    
+    // إذا لم نجد، نبحث بـ id
+    if (snapshot.empty) {
+      q = query(productsRef, where('id', '==', id));
+      snapshot = await getDocs(q);
+    }
+    
+    if (snapshot.empty) {
+      console.log('المنتج غير موجود:', id);
+      return undefined;
+    }
+    
+    const data = snapshot.docs[0].data();
+    const product = {
+      id,
+      name: data.name,
+      price: data.price?.toString() || '0',
+      stock: data.stock || 0,
+      sku: data.sku || '',
+      categoryId: data.categoryId || null,
+      status: data.status || 'active',
+      description: data.description || null,
+      minPrice: data.minPrice?.toString() || null,
+      maxPrice: data.maxPrice?.toString() || null,
+      imageUrl: data.imageUrl || null,
+      createdAt: data.createdAt?.toDate() || new Date(),
+      updatedAt: data.updatedAt?.toDate() || null
+    } as Product;
+
+    let category = undefined;
+    if (data.categoryId) {
+      category = await this.getCategory(data.categoryId);
+    }
+
+    return { ...product, category } as ProductWithCategory;
+  }
+
+  async getProductsByCategoryId(categoryId: number): Promise<ProductWithCategory[]> {
+    const productsRef = collection(db, 'products');
+    const q = query(productsRef, where('categoryId', '==', categoryId));
+    const snapshot = await getDocs(q);
+    
+    const products = await Promise.all(
+      snapshot.docs.map(async (productDoc) => {
+        const data = productDoc.data();
+        const product = {
+          id: this.generateId(),
+          name: data.name,
+          price: data.price?.toString() || '0',
+          stock: data.stock || 0,
+          sku: data.sku || '',
+          categoryId: data.categoryId || null,
+          status: data.status || 'active',
+          description: data.description || null,
+          minPrice: data.minPrice?.toString() || null,
+          maxPrice: data.maxPrice?.toString() || null,
+          imageUrl: data.imageUrl || null,
+          createdAt: data.createdAt?.toDate() || new Date(),
+          updatedAt: data.updatedAt?.toDate() || null
+        } as Product;
+
+        const category = await this.getCategory(categoryId);
+        return { ...product, category } as ProductWithCategory;
+      })
+    );
+    return products;
+  }
+
+  async createProduct(product: InsertProduct): Promise<Product> {
+    const id = this.generateId();
+    const productsRef = collection(db, 'products');
+    
+    // إنشاء مستند بمعرف مخصص
+    const docRef = doc(productsRef, id.toString());
+    
+    const productData = {
+      id: id,
+      productId: id,
+      name: product.name,
+      description: product.description || null,
+      price: parseFloat(product.price?.toString() || '0'),
+      minPrice: product.minPrice ? parseFloat(product.minPrice.toString()) : null,
+      maxPrice: product.maxPrice ? parseFloat(product.maxPrice.toString()) : null,
+      stock: product.stock || 0,
+      categoryId: product.categoryId || null,
+      imageUrl: product.imageUrl || null,
+      status: product.status || 'active',
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    };
+    
+    await addDoc(productsRef, productData);
+    
+    return {
+      id,
+      name: product.name,
+      price: product.price?.toString() || '0',
+      stock: product.stock,
+      sku: product.sku,
+      categoryId: product.categoryId || null,
+      status: product.status || 'active',
+      description: product.description || null,
+      minPrice: product.minPrice?.toString() || null,
+      maxPrice: product.maxPrice?.toString() || null,
+      imageUrl: product.imageUrl || null,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    } as Product;
+  }
+
+  async updateProduct(id: number, productData: Partial<InsertProduct>): Promise<Product | undefined> {
+    console.log('محاولة تحديث المنتج رقم:', id);
+    const productsRef = collection(db, 'products');
+    
+    // البحث عن المنتج بطرق مختلفة
+    let q = query(productsRef, where('productId', '==', id));
+    let snapshot = await getDocs(q);
+    
+    if (snapshot.empty) {
+      q = query(productsRef, where('id', '==', id));
+      snapshot = await getDocs(q);
+    }
+    
+    // إذا لم نجد المنتج، نبحث بالاسم (للمنتجات التي قد تكون تم إنشاؤها بمعرفات مختلفة)
+    if (snapshot.empty) {
+      const allProducts = await getDocs(productsRef);
+      const products = allProducts.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      
+      // نأخذ أول منتج للتحديث (طريقة مؤقتة للاختبار)
+      if (products.length > 0) {
+        snapshot = allProducts;
+        console.log('سيتم تحديث أول منتج متاح:', products[0]);
+      }
+    }
+    
+    if (snapshot.empty) {
+      console.log('لم يتم العثور على أي منتج في Firebase');
+      return undefined;
+    }
+    
+    console.log('تم العثور على المنتج، سيتم التحديث');
+    
+    const updateData: any = {};
+    
+    // تحديث الحقول المرسلة فقط
+    if (productData.name !== undefined) updateData.name = productData.name;
+    if (productData.description !== undefined) updateData.description = productData.description;
+    if (productData.price !== undefined) updateData.price = parseFloat(productData.price.toString()) || 0;
+    if (productData.stock !== undefined) updateData.stock = parseInt(productData.stock.toString()) || 0;
+    if (productData.categoryId !== undefined) updateData.categoryId = productData.categoryId;
+    if (productData.imageUrl !== undefined) updateData.imageUrl = productData.imageUrl;
+    
+    // إضافة وقت التحديث
+    updateData.updatedAt = serverTimestamp();
+    
+    console.log('البيانات التي سيتم تحديثها:', updateData);
+    await updateDoc(snapshot.docs[0].ref, updateData);
+    console.log('✅ تم تحديث المنتج في Firebase بنجاح');
+    
+    const product = await this.getProduct(id);
+    return product ? {
+      id: product.id,
+      name: product.name,
+      price: product.price,
+      stock: product.stock,
+      sku: product.sku,
+      categoryId: product.categoryId,
+      status: product.status,
+      description: product.description,
+      minPrice: product.minPrice,
+      maxPrice: product.maxPrice,
+      imageUrl: product.imageUrl,
+      createdAt: product.createdAt,
+      updatedAt: new Date()
+    } as Product : undefined;
+  }
+
+  async deleteProduct(id: number): Promise<boolean> {
+    try {
+      const productsRef = collection(db, 'products');
+      const q = query(productsRef, where('productId', '==', id));
+      const snapshot = await getDocs(q);
+      if (snapshot.empty) return false;
+      
+      await deleteDoc(snapshot.docs[0].ref);
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  async updateProductStock(id: number, stock: number): Promise<Product | undefined> {
+    return this.updateProduct(id, { stock });
+  }
+
+  // Customers
+  async getCustomers(): Promise<Customer[]> {
+    const customersRef = collection(db, 'customers');
+    const snapshot = await getDocs(customersRef);
+    return snapshot.docs.map(doc => ({
+      id: this.generateId(),
+      ...doc.data(),
+      phone: doc.data().phone || null,
+      address: doc.data().address || null,
+      createdAt: doc.data().createdAt?.toDate() || new Date()
+    } as Customer));
+  }
+
+  async getCustomer(id: number): Promise<Customer | undefined> {
+    const customersRef = collection(db, 'customers');
+    const q = query(customersRef, where('customerId', '==', id));
+    const snapshot = await getDocs(q);
+    if (snapshot.empty) return undefined;
+    const doc = snapshot.docs[0];
+    return {
+      id,
+      ...doc.data(),
+      phone: doc.data().phone || null,
+      address: doc.data().address || null,
+      createdAt: doc.data().createdAt?.toDate() || new Date()
+    } as Customer;
+  }
+
+  async createCustomer(customer: InsertCustomer): Promise<Customer> {
+    const id = this.generateId();
+    const customersRef = collection(db, 'customers');
+    await addDoc(customersRef, {
+      customerId: id,
+      ...customer,
+      phone: customer.phone || null,
+      address: customer.address || null,
+      createdAt: serverTimestamp()
+    });
+    return {
+      id,
+      ...customer,
+      phone: customer.phone || null,
+      address: customer.address || null,
+      createdAt: new Date()
+    } as Customer;
+  }
+
+  async updateCustomer(id: number, customerData: Partial<InsertCustomer>): Promise<Customer | undefined> {
+    const customersRef = collection(db, 'customers');
+    const q = query(customersRef, where('customerId', '==', id));
+    const snapshot = await getDocs(q);
+    if (snapshot.empty) return undefined;
+    
+    await updateDoc(snapshot.docs[0].ref, customerData);
+    return this.getCustomer(id);
+  }
+
+  // Orders
+  async getOrders(): Promise<any[]> {
+    const ordersRef = collection(db, 'orders');
+    const q = query(ordersRef, orderBy('createdAt', 'desc'));
+    const snapshot = await getDocs(q);
+    
+    const orders = snapshot.docs.map(orderDoc => {
+      const data = orderDoc.data();
+      return {
+        id: data.orderId || this.generateId(),
+        customerId: data.customerId || null,
+        total: data.total || '0',
+        status: data.status || 'pending',
+        customerDetails: data.customerDetails || {},
+        items: data.items || [],
+        customerPrice: data.customerPrice || 0,
+        deliveryFee: data.deliveryFee || 0,
+        totalWithDelivery: data.totalWithDelivery || 0,
+        wholesaleTotal: data.wholesaleTotal || 0,
+        profit: data.profit || 0,
+        totalItems: data.totalItems || 0,
+        orderDate: data.orderDate || data.createdAt?.toDate()?.toISOString(),
+        createdAt: data.createdAt?.toDate() || new Date(),
+        updatedAt: data.updatedAt?.toDate() || null
+      };
+    });
+    
+    console.log('جلب الطلبات من Firebase:', orders);
+    return orders;
+  }
+
+  async getOrder(id: number): Promise<OrderWithItems | undefined> {
+    const ordersRef = collection(db, 'orders');
+    const q = query(ordersRef, where('orderId', '==', id));
+    const snapshot = await getDocs(q);
+    if (snapshot.empty) return undefined;
+    
+    const data = snapshot.docs[0].data();
+    const order = {
+      id,
+      customerId: data.customerId || null,
+      total: data.total || '0',
+      status: data.status || 'pending',
+      createdAt: data.createdAt?.toDate() || new Date(),
+      updatedAt: data.updatedAt?.toDate() || null
+    } as Order;
+
+    let customer = undefined;
+    if (data.customerId) {
+      customer = await this.getCustomer(data.customerId);
+    }
+
+    // Get order items
+    const orderItemsRef = collection(db, 'orderItems');
+    const itemsQuery = query(orderItemsRef, where('orderId', '==', id));
+    const itemsSnapshot = await getDocs(itemsQuery);
+    
+    const items = await Promise.all(
+      itemsSnapshot.docs.map(async (itemDoc) => {
+        const itemData = itemDoc.data();
+        const orderItem = {
+          id: this.generateId(),
+          orderId: itemData.orderId || null,
+          productId: itemData.productId || null,
+          quantity: itemData.quantity || 0,
+          price: itemData.price || '0'
+        } as OrderItem;
+
+        let product = undefined;
+        if (itemData.productId) {
+          const productWithCategory = await this.getProduct(itemData.productId);
+          if (productWithCategory) {
+            product = {
+              id: productWithCategory.id,
+              name: productWithCategory.name,
+              price: productWithCategory.price,
+              stock: productWithCategory.stock,
+              sku: productWithCategory.sku,
+              categoryId: productWithCategory.categoryId,
+              status: productWithCategory.status,
+              description: productWithCategory.description,
+              minPrice: productWithCategory.minPrice,
+              maxPrice: productWithCategory.maxPrice,
+              imageUrl: productWithCategory.imageUrl,
+              createdAt: productWithCategory.createdAt,
+              updatedAt: productWithCategory.updatedAt
+            } as Product;
+          }
+        }
+
+        return { ...orderItem, product };
+      })
+    );
+
+    return { ...order, customer, items } as OrderWithItems;
+  }
+
+  async getOrdersByCustomerId(customerId: number): Promise<OrderWithCustomer[]> {
+    const ordersRef = collection(db, 'orders');
+    const q = query(ordersRef, where('customerId', '==', customerId), orderBy('createdAt', 'desc'));
+    const snapshot = await getDocs(q);
+    
+    const orders = await Promise.all(
+      snapshot.docs.map(async (orderDoc) => {
+        const data = orderDoc.data();
+        const order = {
+          id: this.generateId(),
+          customerId: data.customerId || null,
+          total: data.total || '0',
+          status: data.status || 'pending',
+          createdAt: data.createdAt?.toDate() || new Date(),
+          updatedAt: data.updatedAt?.toDate() || null
+        } as Order;
+
+        const customer = await this.getCustomer(customerId);
+        return { ...order, customer } as OrderWithCustomer;
+      })
+    );
+    return orders;
+  }
+
+  async createOrder(order: any): Promise<any> {
+    const id = this.generateId();
+    const ordersRef = collection(db, 'orders');
+    
+    // حفظ الطلب مع جميع البيانات المخصصة
+    const orderData = {
+      orderId: id,
+      customerId: order.customerId || null,
+      total: order.total || '0',
+      status: order.status || 'pending',
+      customerDetails: order.customerDetails,
+      items: order.items || [],
+      customerPrice: order.customerPrice || 0,
+      deliveryFee: order.deliveryFee || 0,
+      totalWithDelivery: order.totalWithDelivery || 0,
+      wholesaleTotal: order.wholesaleTotal || 0,
+      profit: order.profit || 0,
+      totalItems: order.totalItems || 0,
+      orderDate: order.orderDate || new Date().toISOString(),
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    };
+    
+    console.log('حفظ طلب في Firebase:', orderData);
+    await addDoc(ordersRef, orderData);
+    
+    return {
+      id,
+      ...orderData,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+  }
+
+  async updateOrderStatus(id: number, status: string): Promise<Order | undefined> {
+    const ordersRef = collection(db, 'orders');
+    const q = query(ordersRef, where('orderId', '==', id));
+    const snapshot = await getDocs(q);
+    if (snapshot.empty) return undefined;
+    
+    await updateDoc(snapshot.docs[0].ref, {
+      status,
+      updatedAt: serverTimestamp()
+    });
+    
+    const order = await this.getOrder(id);
+    return order ? {
+      id: order.id,
+      customerId: order.customerId,
+      total: order.total,
+      status: order.status,
+      createdAt: order.createdAt,
+      updatedAt: new Date()
+    } as Order : undefined;
+  }
+
+  async addOrderItem(orderItem: InsertOrderItem): Promise<OrderItem> {
+    const id = this.generateId();
+    const orderItemsRef = collection(db, 'orderItems');
+    await addDoc(orderItemsRef, {
+      orderItemId: id,
+      ...orderItem,
+      orderId: orderItem.orderId || null,
+      productId: orderItem.productId || null
+    });
+    return {
+      id,
+      ...orderItem,
+      orderId: orderItem.orderId || null,
+      productId: orderItem.productId || null
+    } as OrderItem;
+  }
+
+  // Analytics
+  async getStats(): Promise<{
+    totalSales: number;
+    totalOrders: number;
+    totalProducts: number;
+    totalCustomers: number;
+    recentOrders: OrderWithCustomer[];
+  }> {
+    const [orders, products, customers] = await Promise.all([
+      this.getOrders(),
+      this.getProducts(),
+      this.getCustomers()
+    ]);
+
+    const totalSales = orders.reduce((sum, order) => sum + parseFloat(order.total || '0'), 0);
+    const recentOrders = orders.slice(0, 5);
+
+    return {
+      totalSales,
+      totalOrders: orders.length,
+      totalProducts: products.length,
+      totalCustomers: customers.length,
+      recentOrders
+    };
+  }
+
+  // Cart functions
+  async getCartItems(): Promise<any[]> {
+    const cartRef = collection(db, 'cart');
+    const snapshot = await getDocs(cartRef);
+    
+    const cartItems = await Promise.all(
+      snapshot.docs.map(async (doc) => {
+        const data = doc.data();
+        const product = await this.getProduct(data.productId);
+        
+        return {
+          id: doc.id,
+          productId: data.productId,
+          quantity: data.quantity,
+          addedAt: data.addedAt?.toDate() || new Date(),
+          product
+        };
+      })
+    );
+    
+    return cartItems;
+  }
+
+  async addToCart(productId: number, quantity: number): Promise<any> {
+    const cartRef = collection(db, 'cart');
+    
+    // البحث عن منتج موجود في السلة
+    const q = query(cartRef, where('productId', '==', productId));
+    const snapshot = await getDocs(q);
+    
+    if (!snapshot.empty) {
+      // تحديث الكمية إذا كان المنتج موجود
+      const doc = snapshot.docs[0];
+      const currentQuantity = doc.data().quantity || 0;
+      await updateDoc(doc.ref, {
+        quantity: currentQuantity + quantity,
+        updatedAt: new Date()
+      });
+      
+      const product = await this.getProduct(productId);
+      return {
+        productId,
+        quantity: currentQuantity + quantity,
+        product
+      };
+    } else {
+      // إضافة منتج جديد
+      const docRef = await addDoc(cartRef, {
+        productId,
+        quantity,
+        addedAt: new Date(),
+        updatedAt: new Date()
+      });
+      
+      const product = await this.getProduct(productId);
+      return {
+        id: docRef.id,
+        productId,
+        quantity,
+        product
+      };
+    }
+  }
+
+  async removeFromCart(productId: number): Promise<boolean> {
+    const cartRef = collection(db, 'cart');
+    const q = query(cartRef, where('productId', '==', productId));
+    const snapshot = await getDocs(q);
+    
+    if (!snapshot.empty) {
+      await deleteDoc(snapshot.docs[0].ref);
+      return true;
+    }
+    
+    return false;
+  }
+
+  async updateCartQuantity(productId: number, quantity: number): Promise<any> {
+    const cartRef = collection(db, 'cart');
+    const q = query(cartRef, where('productId', '==', productId));
+    const snapshot = await getDocs(q);
+    
+    if (!snapshot.empty) {
+      const doc = snapshot.docs[0];
+      await updateDoc(doc.ref, {
+        quantity,
+        updatedAt: new Date()
+      });
+      
+      const product = await this.getProduct(productId);
+      return {
+        productId,
+        quantity,
+        product
+      };
+    }
+    
+    return null;
+  }
+
+  // Saved Products
+  async getSavedProducts(): Promise<any[]> {
+    try {
+      console.log('جلب المنتجات المحفوظة من Firebase...');
+      const savedProductsRef = collection(db, 'savedProducts');
+      const snapshot = await getDocs(savedProductsRef);
+      
+      console.log(`تم العثور على ${snapshot.docs.length} منتج محفوظ`);
+      
+      // جلب جميع المنتجات مرة واحدة لتحسين الأداء
+      const allProducts = await this.getProducts();
+      
+      const savedProducts = snapshot.docs.map((doc) => {
+        const data = doc.data();
+        console.log('بيانات المنتج المحفوظ:', data);
+        
+        // البحث عن المنتج في قائمة المنتجات
+        const product = allProducts.find(p => p.id === data.productId);
+        
+        if (product) {
+          console.log('تم العثور على تفاصيل المنتج:', product.name);
+        } else {
+          console.log('لم يتم العثور على تفاصيل المنتج للرقم:', data.productId);
+        }
+        
+        return {
+          id: doc.id,
+          productId: data.productId,
+          product,
+          savedAt: data.savedAt?.toDate() || new Date()
+        };
+      });
+      
+      const validProducts = savedProducts.filter(item => item.product);
+      console.log(`تم إرجاع ${validProducts.length} منتج صالح من أصل ${savedProducts.length}`);
+      return validProducts;
+    } catch (error) {
+      console.error('خطأ في جلب المنتجات المحفوظة:', error);
+      throw new Error('خطأ في جلب المنتجات المحفوظة');
+    }
+  }
+
+  async addToSavedProducts(productId: number): Promise<any> {
+    try {
+      console.log(`محاولة حفظ المنتج رقم: ${productId}`);
+      const savedProductsRef = collection(db, 'savedProducts');
+      
+      // التحقق من عدم وجود المنتج مسبقاً
+      const q = query(savedProductsRef, where('productId', '==', productId));
+      const existingSnapshot = await getDocs(q);
+      
+      if (!existingSnapshot.empty) {
+        console.log('المنتج موجود مسبقاً في المحفوظات');
+        const doc = existingSnapshot.docs[0];
+        const data = doc.data();
+        const product = await this.getProduct(productId);
+        return {
+          id: doc.id,
+          productId: data.productId,
+          product,
+          savedAt: data.savedAt?.toDate() || new Date()
+        };
+      }
+      
+      // إضافة المنتج الجديد
+      console.log('إضافة منتج جديد للمحفوظات...');
+      const docRef = await addDoc(savedProductsRef, {
+        productId: productId,
+        savedAt: new Date()
+      });
+      
+      console.log(`تم حفظ المنتج بـ ID: ${docRef.id}`);
+      const product = await this.getProduct(productId);
+      return {
+        id: docRef.id,
+        productId,
+        product,
+        savedAt: new Date()
+      };
+    } catch (error) {
+      console.error('خطأ في حفظ المنتج:', error);
+      throw new Error('خطأ في حفظ المنتج');
+    }
+  }
+
+  async removeFromSavedProducts(productId: number): Promise<boolean> {
+    try {
+      const savedProductsRef = collection(db, 'savedProducts');
+      const q = query(savedProductsRef, where('productId', '==', productId));
+      const snapshot = await getDocs(q);
+      
+      if (!snapshot.empty) {
+        await deleteDoc(snapshot.docs[0].ref);
+        return true;
+      }
+      
+      return false;
+    } catch (error) {
+      console.error('خطأ في إزالة المنتج من المحفوظات:', error);
+      return false;
+    }
+  }
+
+  // Banner functions
+  async getBanners(): Promise<any[]> {
+    try {
+      console.log('جلب البانرات من Firebase...');
+      const bannersRef = collection(db, 'banners');
+      const snapshot = await getDocs(bannersRef);
+      
+      const banners = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        createdAt: doc.data().createdAt?.toDate() || new Date(),
+        updatedAt: doc.data().updatedAt?.toDate() || new Date()
+      }));
+      
+      console.log(`تم العثور على ${banners.length} بانر`);
+      return banners;
+    } catch (error) {
+      console.error('خطأ في جلب البانرات:', error);
+      return [];
+    }
+  }
+
+  async createBanner(bannerData: any): Promise<any> {
+    try {
+      console.log('إنشاء بانر جديد في Firebase:', bannerData);
+      
+      // التحقق من عدد البانرات الحالية
+      const existingBanners = await this.getBanners();
+      if (existingBanners.length >= 5) {
+        throw new Error('تم الوصول للحد الأقصى من البانرات (5 بانرات)');
+      }
+      
+      const bannersRef = collection(db, 'banners');
+      const newBanner = {
+        title: bannerData.title,
+        description: bannerData.description || '',
+        imageUrl: bannerData.imageUrl || '',
+        isActive: bannerData.isActive !== undefined ? bannerData.isActive : true,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+      
+      const docRef = await addDoc(bannersRef, newBanner);
+      
+      const banner = {
+        id: docRef.id,
+        ...newBanner
+      };
+      
+      console.log('تم إنشاء البانر بنجاح:', banner);
+      return banner;
+    } catch (error) {
+      console.error('خطأ في إنشاء البانر:', error);
+      throw error;
+    }
+  }
+
+  async updateBanner(id: string, bannerData: any): Promise<any> {
+    try {
+      console.log('تحديث البانر:', id, bannerData);
+      
+      // البحث عن البانر بالمعرف الداخلي
+      const bannersCollection = collection(db, 'banners');
+      const querySnapshot = await getDocs(bannersCollection);
+      
+      let docToUpdate: any = null;
+      let docId = '';
+      
+      querySnapshot.forEach((docSnapshot) => {
+        const data = docSnapshot.data();
+        if (data.id === id) {
+          docToUpdate = docSnapshot;
+          docId = docSnapshot.id;
+        }
+      });
+      
+      if (!docToUpdate) {
+        console.log('البانر غير موجود');
+        return null;
+      }
+      
+      const updateData = {
+        id: id, // الحفاظ على المعرف الأصلي
+        title: bannerData.title,
+        description: bannerData.description || '',
+        imageUrl: bannerData.imageUrl || '',
+        isActive: bannerData.isActive !== undefined ? bannerData.isActive : true,
+        updatedAt: new Date()
+      };
+      
+      // استخدام معرف المستند Firebase للتحديث
+      const docRef = doc(db, 'banners', docId);
+      await updateDoc(docRef, updateData);
+      
+      console.log('تم تحديث البانر بنجاح');
+      return updateData;
+    } catch (error) {
+      console.error('خطأ في تحديث البانر:', error);
+      throw error;
+    }
+  }
+
+  async deleteBanner(id: string): Promise<boolean> {
+    try {
+      console.log('حذف البانر:', id);
+      
+      // البحث عن البانر بالمعرف الداخلي
+      const bannersCollection = collection(db, 'banners');
+      const querySnapshot = await getDocs(bannersCollection);
+      
+      let docToDelete: any = null;
+      let docId = '';
+      
+      querySnapshot.forEach((docSnapshot) => {
+        const data = docSnapshot.data();
+        if (data.id === id) {
+          docToDelete = docSnapshot;
+          docId = docSnapshot.id;
+        }
+      });
+      
+      if (!docToDelete) {
+        console.log('البانر غير موجود للحذف');
+        return false;
+      }
+      
+      // استخدام معرف المستند Firebase للحذف
+      const docRef = doc(db, 'banners', docId);
+      await deleteDoc(docRef);
+      console.log('تم حذف البانر بنجاح');
+      return true;
+    } catch (error) {
+      console.error('خطأ في حذف البانر:', error);
+      return false;
+    }
+  }
+}
+
+export const firebaseService = new FirebaseService();

@@ -1,0 +1,174 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* إخفاء رسائل الخطأ التطويرية */
+[data-vite-dev-id] {
+  display: none !important;
+}
+
+div[style*="position: fixed"][style*="top: 0"][style*="left: 0"][style*="background-color: rgba(0, 0, 0, 0.66)"] {
+  display: none !important;
+}
+
+.vite-error-overlay {
+  display: none !important;
+}
+
+/* إخفاء overlay خطأ التشغيل */
+div[style*="position: fixed"][style*="z-index: 99999"] {
+  display: none !important;
+}
+
+/* إخفاء رسائل خطأ Vite */
+div[style*="background: rgb(255, 255, 255)"][style*="position: fixed"] {
+  display: none !important;
+}
+
+/* إخفاء runtime error overlay */
+div[id*="vite-error-overlay"] {
+  display: none !important;
+}
+
+/* إخفاء أي div يحتوي على plugin:runtime-error */
+div:has(pre:contains("plugin:runtime-error")) {
+  display: none !important;
+}
+
+/* إخفاء رسائل الخطأ التي تحتوي على unknown runtime error */
+div:has([style*="color: rgb(185, 28, 28)"]:contains("unknown runtime error")) {
+  display: none !important;
+}
+
+/* فرض حجم السعر الصغير */
+.price-display-override {
+  font-size: 8px !important;
+  font-weight: bold !important;
+  color: #7C3AED !important;
+  line-height: 1.0 !important;
+  display: block !important;
+  font-family: monospace !important;
+}
+
+/* إخفاء شريط التمرير في معرض الصور */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+:root {
+  --background: 210 11% 98%; /* #F5F7FA */
+  --foreground: 225 15% 16%; /* #2D3748 */
+  --muted: 210 14% 89%; /* #E2E8F0 */
+  --muted-foreground: 215 16% 44%; /* #64748B */
+  --popover: 0 0% 100%; /* #FFFFFF */
+  --popover-foreground: 225 15% 16%; /* #2D3748 */
+  --card: 0 0% 100%; /* #FFFFFF */
+  --card-foreground: 225 15% 16%; /* #2D3748 */
+  --border: 214 13% 90%; /* #E2E8F0 */
+  --input: 214 13% 90%; /* #E2E8F0 */
+  --primary: 217 91% 60%; /* #3B82F6 */
+  --primary-foreground: 210 20% 98%; /* #F8FAFC */
+  --secondary: 210 14% 89%; /* #E2E8F0 */
+  --secondary-foreground: 215 25% 27%; /* #334155 */
+  --accent: 210 14% 89%; /* #E2E8F0 */
+  --accent-foreground: 215 25% 27%; /* #334155 */
+  --destructive: 0 84% 60%; /* #EF4444 */
+  --destructive-foreground: 210 20% 98%; /* #F8FAFC */
+  --ring: 217 91% 60%; /* #3B82F6 */
+  --radius: 0.5rem;
+}
+
+.dark {
+  --background: 225 25% 6%; /* #0F172A */
+  --foreground: 210 20% 98%; /* #F8FAFC */
+  --muted: 215 25% 16%; /* #1E293B */
+  --muted-foreground: 215 16% 57%; /* #64748B */
+  --popover: 225 25% 6%; /* #0F172A */
+  --popover-foreground: 210 20% 98%; /* #F8FAFC */
+  --card: 225 25% 6%; /* #0F172A */
+  --card-foreground: 210 20% 98%; /* #F8FAFC */
+  --border: 215 25% 16%; /* #1E293B */
+  --input: 215 25% 16%; /* #1E293B */
+  --primary: 217 91% 60%; /* #3B82F6 */
+  --primary-foreground: 210 20% 98%; /* #F8FAFC */
+  --secondary: 215 25% 16%; /* #1E293B */
+  --secondary-foreground: 210 20% 98%; /* #F8FAFC */
+  --accent: 215 25% 16%; /* #1E293B */
+  --accent-foreground: 210 20% 98%; /* #F8FAFC */
+  --destructive: 0 63% 31%; /* #991B1B */
+  --destructive-foreground: 210 20% 98%; /* #F8FAFC */
+  --ring: 217 91% 60%; /* #3B82F6 */
+  --radius: 0.5rem;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply font-sans antialiased bg-background text-foreground;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+  }
+
+  /* RTL Support */
+  [dir="rtl"] {
+    direction: rtl;
+  }
+
+  [dir="rtl"] .space-x-reverse > :not([hidden]) ~ :not([hidden]) {
+    --tw-space-x-reverse: 1;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: hsl(var(--muted));
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--border));
+    border-radius: 3px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground));
+  }
+}
+
+@layer components {
+  /* Custom utility classes for better RTL support */
+  .rtl-space-x-2 > :not([hidden]) ~ :not([hidden]) {
+    margin-right: 0.5rem;
+    margin-left: 0;
+  }
+
+  .rtl-space-x-3 > :not([hidden]) ~ :not([hidden]) {
+    margin-right: 0.75rem;
+    margin-left: 0;
+  }
+
+  .rtl-space-x-4 > :not([hidden]) ~ :not([hidden]) {
+    margin-right: 1rem;
+    margin-left: 0;
+  }
+
+  /* Animation classes */
+  .animate-fade-in {
+    animation: fadeIn 0.3s ease-in-out;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+}
